@@ -1,0 +1,13 @@
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Node (none required, but just in case)
+node_modules/
+*.log
+
+# The runtime cache lives in ~/.claude, not here — listed for clarity only
+.statusline-or-cache.json

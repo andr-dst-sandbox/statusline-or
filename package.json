@@ -1,0 +1,46 @@
+{
+  "name": "statusline-or",
+  "version": "1.0.0",
+  "description": "Custom Claude Code status line: rate-limit progress bars + OpenRouter/API-equivalent cost (session, 5h block, weekly window). Pure Node, no dependencies, no Nerd Fonts.",
+  "bin": {
+    "statusline-or": "statusline-or.js"
+  },
+  "files": [
+    "statusline-or.js",
+    "example-input.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "demo": "node statusline-or.js < example-input.json"
+  },
+  "keywords": [
+    "claude-code",
+    "claude",
+    "anthropic",
+    "statusline",
+    "status-line",
+    "cli",
+    "cost",
+    "ccusage",
+    "openrouter",
+    "token-usage",
+    "rate-limit",
+    "terminal",
+    "developer-tools"
+  ],
+  "author": "andr-dst-sandbox",
+  "license": "MIT",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/andr-dst-sandbox/statusline-or.git"
+  },
+  "bugs": {
+    "url": "https://github.com/andr-dst-sandbox/statusline-or/issues"
+  },
+  "homepage": "https://github.com/andr-dst-sandbox/statusline-or#readme"
+}

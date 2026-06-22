@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="150" font-family="SFMono-Regular, Menlo, Consolas, 'DejaVu Sans Mono', monospace" font-size="15">
+  <rect width="1000" height="150" rx="10" fill="#1e1e2e"/>
+  <rect width="1000" height="34" rx="10" fill="#181825"/>
+  <rect y="20" width="1000" height="14" fill="#181825"/>
+  <circle cx="22" cy="17" r="6" fill="#f38ba8"/>
+  <circle cx="44" cy="17" r="6" fill="#f9e2af"/>
+  <circle cx="66" cy="17" r="6" fill="#a6e3a1"/>
+  <text x="500" y="22" text-anchor="middle" fill="#6c7086" font-size="13">claude code — statusline-or</text>
+
+  <text x="20" y="80" xml:space="preserve"><tspan fill="#89dceb">Opus 4.8</tspan><tspan fill="#b4befe"> ·xhigh</tspan><tspan fill="#494d64"> │ </tspan><tspan fill="#a6adc8">ctx </tspan><tspan fill="#a6e3a1">███▊</tspan><tspan fill="#45475a">░░░░░░</tspan><tspan fill="#a6e3a1"> 37%</tspan><tspan fill="#7f849c"> 370k/1M</tspan><tspan fill="#494d64"> │ </tspan><tspan fill="#cba6f7">⚡96%</tspan><tspan fill="#7f849c"> cache</tspan><tspan fill="#494d64"> │ </tspan><tspan fill="#a6adc8">tok </tspan><tspan fill="#74c7ec">↑6.5M ↓143k</tspan><tspan fill="#494d64"> │ </tspan><tspan fill="#a6adc8">▸ </tspan><tspan fill="#cdd6f4">myproject</tspan></text>
+
+  <text x="20" y="116" xml:space="preserve"><tspan fill="#a6adc8">5h </tspan><tspan fill="#a6e3a1">█▍</tspan><tspan fill="#45475a">░░░░░░░░</tspan><tspan fill="#a6e3a1"> 14%</tspan><tspan fill="#7f849c"> ↻59m·19:13</tspan><tspan fill="#494d64"> │ </tspan><tspan fill="#a6adc8">7d </tspan><tspan fill="#a6e3a1">█▉</tspan><tspan fill="#45475a">░░░░░░░░</tspan><tspan fill="#a6e3a1"> 19%</tspan><tspan fill="#7f849c"> ↻4d23h·Sat</tspan><tspan fill="#494d64"> │ </tspan><tspan fill="#a6adc8">OR≈</tspan><tspan fill="#7f849c"> sess</tspan><tspan fill="#f9e2af"> $3.71</tspan><tspan fill="#7f849c"> · 5h</tspan><tspan fill="#f9e2af"> $36.93</tspan><tspan fill="#7f849c"> · 7d</tspan><tspan fill="#f9e2af"> $123.21</tspan></text>
+</svg>
