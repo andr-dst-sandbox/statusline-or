@@ -34,6 +34,38 @@ const PROJECTS_DIR = path.join(HOME, '.claude', 'projects');
 const CACHE_FILE = path.join(HOME, '.claude', '.statusline-or-cache.json');
 
 // ---------------------------------------------------------------------------
+// Cross-machine aggregation (opt-in via SL_SHARE_DIR).
+// ---------------------------------------------------------------------------
+// The 5h/7d $ are summed from local transcripts only, so on a multi-VM account
+// each machine sees just its own slice (the % bars, by contrast, come from the
+// account-wide rate_limits payload). Anthropic exposes no account-wide token/$
+// figure to the status line — only a percentage — so the only way to get true
+// account-wide DOLLARS is to pool transcripts across machines.
+//
+// Mechanism, fully self-contained (no cron/sync job): on each refresh this
+// machine publishes a small, locally-deduped per-host summary of its last ~10
+// days of usage to <shareDir>/by-host/<hostname>.json, and reads the OTHER
+// hosts' summaries back. The windows then sum local + remote with the same
+// global message.id dedup. Point the share dir at any folder visible on every
+// machine (a synced OneDrive/Dropbox/Syncthing dir, or a UNC share).
+//
+// Configure the path WITHOUT editing this (public) file, via either:
+//   - env SL_SHARE_DIR, or
+//   - ~/.claude/statusline-or.local.json  =>  { "shareDir": "C:\\...\\cc-usage" }
+// Neither set => behaves exactly as before (this machine only). The local-config
+// route keeps per-machine paths out of version control.
+function resolveShareDir() {
+  if (process.env.SL_SHARE_DIR) return process.env.SL_SHARE_DIR;
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(HOME, '.claude', 'statusline-or.local.json'), 'utf8'));
+    if (cfg && cfg.shareDir) return String(cfg.shareDir);
+  } catch (_) {}
+  return '';
+}
+const SHARE_DIR = resolveShareDir();
+const HOSTNAME = String(os.hostname() || 'host').replace(/[^A-Za-z0-9._-]/g, '_');
+
+// ---------------------------------------------------------------------------
 // Pricing — USD per 1,000,000 tokens. Matches Anthropic list prices, which
 // OpenRouter mirrors for Claude models. Edit here if rates change.
 // ---------------------------------------------------------------------------
@@ -231,16 +263,18 @@ function computeWindows(data) {
     keep[f.fp] = e;
   }
 
-  // Aggregate with GLOBAL dedup — resumed sessions copy prior messages into new
-  // transcripts (~58% duplicate lines here), so counting per-file double-bills.
-  const seen = new Set();
-  let five = 0, week = 0, sessionTok = null;
+  // Flatten this machine's records into one GLOBALLY-deduped list — resumed
+  // sessions copy prior messages into new transcripts (~58% duplicate lines
+  // here), so counting per-file double-bills. This list is also what we publish
+  // for other machines, so it must already be deduped.
+  const localSeen = new Set();
+  const localMsgs = [];
+  let sessionTok = null;
   for (const fp in keep) {
     const e = keep[fp];
     for (const m of e.msgs) {
-      if (m.k) { if (seen.has(m.k)) continue; seen.add(m.k); }
-      if (m.t >= start7) week += m.c;
-      if (m.t >= start5) five += m.c;
+      if (m.k) { if (localSeen.has(m.k)) continue; localSeen.add(m.k); }
+      localMsgs.push(m);
     }
     if (transcript && path.resolve(fp) === transcript) sessionTok = e.tok;
   }
@@ -248,6 +282,49 @@ function computeWindows(data) {
   // Prune cache to the recent set (older files can't re-enter the windows).
   if (!dirty && Object.keys(cache.files).length !== Object.keys(keep).length) dirty = true;
   if (dirty) { try { fs.writeFileSync(CACHE_FILE, JSON.stringify({ version: CACHE_VERSION, files: keep })); } catch (_) {} }
+
+  // Publish/consume per-host summaries for account-wide totals (opt-in).
+  // Publish when local data changed (dirty) but at most once per PUBLISH_THROTTLE
+  // (the summary is ~hundreds of KB and a synced folder shouldn't be rewritten on
+  // every keystroke); always create it if missing. An idle machine never writes.
+  const PUBLISH_THROTTLE = 90e3;
+  const allMsgs = localMsgs.slice();
+  if (SHARE_DIR) {
+    const byHost = path.join(SHARE_DIR, 'by-host');
+    const ownFile = HOSTNAME + '.json';
+    const ownPath = path.join(byHost, ownFile);
+    try {
+      let publish = true;
+      try { publish = dirty && (now - fs.statSync(ownPath).mtimeMs > PUBLISH_THROTTLE); }
+      catch (_) { publish = true; } // missing summary => create it
+      if (publish) {
+        fs.mkdirSync(byHost, { recursive: true });
+        const tmp = ownPath + '.' + process.pid + '.tmp';
+        fs.writeFileSync(tmp, JSON.stringify({ host: HOSTNAME, updatedAt: now, msgs: localMsgs }));
+        fs.renameSync(tmp, ownPath); // atomic swap
+      }
+    } catch (_) {}
+    // Merge in every OTHER host's summary (our own slice is already in allMsgs).
+    let ents = [];
+    try { ents = fs.readdirSync(byHost); } catch (_) {}
+    for (const fn of ents) {
+      if (!fn.endsWith('.json') || fn === ownFile) continue;
+      try {
+        const o = JSON.parse(fs.readFileSync(path.join(byHost, fn), 'utf8'));
+        if (o && Array.isArray(o.msgs)) for (const m of o.msgs) allMsgs.push(m);
+      } catch (_) {}
+    }
+  }
+
+  // Sum windows with GLOBAL dedup across all hosts (message ids are unique, so
+  // this only matters if a transcript was copied between machines by hand).
+  const seen = new Set();
+  let five = 0, week = 0;
+  for (const m of allMsgs) {
+    if (m.k) { if (seen.has(m.k)) continue; seen.add(m.k); }
+    if (m.t >= start7) week += m.c;
+    if (m.t >= start5) five += m.c;
+  }
 
   return { five, week, sessionTok };
 }
