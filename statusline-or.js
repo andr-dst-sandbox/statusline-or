@@ -69,20 +69,25 @@ const HOSTNAME = String(os.hostname() || 'host').replace(/[^A-Za-z0-9._-]/g, '_'
 // Pricing — USD per 1,000,000 tokens. Matches Anthropic list prices, which
 // OpenRouter mirrors for Claude models. Edit here if rates change.
 // ---------------------------------------------------------------------------
-// USD per 1,000,000 tokens. Source: LiteLLM model_prices table (what ccusage uses),
-// us-region rates verified 2026-06. cw = cache write (base/5-min), cr = cache read.
-// These also approximate OpenRouter's Claude pricing (pass-through of Anthropic rates).
-// To refresh: see https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json
+// USD per 1,000,000 tokens. Anthropic list prices (which OpenRouter mirrors as a
+// pass-through for Claude models), verified 2026-07. cw = cache write (base/5-min,
+// = 1.25x input), cr = cache read (= 0.1x input).
+//   Fable 5:  $10 / $50     (claude-fable-5, and claude-mythos-5 — same pricing)
+//   Opus 4.x: $5  / $25     (claude-opus-4-*)
+//   Sonnet 5: $3  / $15     (claude-sonnet-5 / 4.6; intro $2/$10 through 2026-08-31 not applied)
+//   Haiku:    $1  / $5      (claude-haiku-4-5)
 const PRICES = {
-  opus:   { in: 5.5, out: 27.5, cw: 6.875, cr: 0.55 },
-  sonnet: { in: 3.3, out: 16.5, cw: 4.125, cr: 0.33 },
-  haiku:  { in: 1.0, out: 5.0,  cw: 1.25,  cr: 0.10 },
+  fable:  { in: 10.0, out: 50.0, cw: 12.5,  cr: 1.00 },
+  opus:   { in: 5.0,  out: 25.0, cw: 6.25,  cr: 0.50 },
+  sonnet: { in: 3.0,  out: 15.0, cw: 3.75,  cr: 0.30 },
+  haiku:  { in: 1.0,  out: 5.0,  cw: 1.25,  cr: 0.10 },
 };
 function priceFor(model) {
   const id = String(model || '').toLowerCase();
+  if (id.includes('fable') || id.includes('mythos')) return PRICES.fable;
   if (id.includes('opus')) return PRICES.opus;
   if (id.includes('haiku')) return PRICES.haiku;
-  return PRICES.sonnet; // sensible mid-tier default for unknown ids
+  return PRICES.sonnet; // sensible mid-tier default (sonnet 5/4.x and unknown ids)
 }
 function entryCost(model, u) {
   const p = priceFor(model);
