@@ -403,21 +403,16 @@ function costGroup(win, sessionCost) {
   if (!parts.length) return null;
   return `${C.label('OR≈')} ` + parts.join(C.dim(' · '));
 }
-// Per-model spend within a window, each tier as a share-bar + $ (fable gets its own
-// bar here — Claude Code sends no per-model rate limit, so this is spend-attributed
-// from transcripts, not a rate-limit reading). Trims trailing tiers to fit COLUMNS.
-const TIER_ORDER = { fable: 0, opus: 1, sonnet: 2, haiku: 3, other: 4 };
-function modelLine(by, total, label) {
+// Fable-only spend within a window, as a usage bar (fable's share of the window
+// $) + the $ itself. Claude Code sends no per-model rate limit, so this is spend
+// attributed from transcripts, not a rate-limit reading. The bar is a proportion,
+// not a risk gauge → kept neutral (never warn/bad). Hidden when fable is unused.
+function fableSegment(by, total, label) {
   if (!by || !(total > 0)) return null;
-  const tiers = Object.keys(by).filter((t) => by[t] > 0)
-    .sort((a, b) => by[b] - by[a] || (TIER_ORDER[a] ?? 9) - (TIER_ORDER[b] ?? 9));
-  if (!tiers.length) return null;
-  const cols = Number(process.env.COLUMNS) || 120;
-  const head = `${C.label(label)} `;
-  // share-bars are proportion, not risk → keep them neutral (never warn/bad).
-  const parts = tiers.map((t) => `${C.model(t)} ${bar((by[t] / total) * 100, 6, 101, 101)} ${C.cost(money(by[t]))}`);
-  while (parts.length > 1 && stripAnsi(head + parts.join(SEP)).length > cols) parts.pop();
-  return head + parts.join(SEP);
+  const c = by.fable || 0;
+  if (c <= 0) return null;
+  const pct = (c / total) * 100;
+  return `${C.label(label)} ${bar(pct, 10, 101, 101)} ${C.model(Math.round(pct) + '%')} ${C.cost(money(c))}`;
 }
 
 // Join segments to fit COLUMNS, dropping lowest-priority (last) optional ones first.
@@ -466,11 +461,11 @@ function render(data) {
     lines.push(bars || costs || C.dim('no usage data'));
   }
 
-  // ---- line 3: per-model spend breakdown (SL_MODELS=0 disables; =5h uses the 5h window, default 7d) ----
-  if (process.env.SL_MODELS !== '0') {
-    const use5 = process.env.SL_MODELS === '5h';
-    const ml = modelLine(use5 ? win.by5 : win.by7, use5 ? win.five : win.week, use5 ? '5h·by' : '7d·by');
-    if (ml) lines.push(ml);
+  // ---- line 3: fable-only spend bar (SL_FABLE=0 disables; =5h uses the 5h window, default 7d) ----
+  if (process.env.SL_FABLE !== '0') {
+    const use5 = process.env.SL_FABLE === '5h';
+    const fb = fableSegment(use5 ? win.by5 : win.by7, use5 ? win.five : win.week, use5 ? '5h fable' : '7d fable');
+    if (fb) lines.push(fb);
   }
   return lines.join('\n');
 }
