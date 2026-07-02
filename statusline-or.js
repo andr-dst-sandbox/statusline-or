@@ -82,13 +82,14 @@ const PRICES = {
   sonnet: { in: 3.0,  out: 15.0, cw: 3.75,  cr: 0.30 },
   haiku:  { in: 1.0,  out: 5.0,  cw: 1.25,  cr: 0.10 },
 };
-function priceFor(model) {
+function tierOf(model) {
   const id = String(model || '').toLowerCase();
-  if (id.includes('fable') || id.includes('mythos')) return PRICES.fable;
-  if (id.includes('opus')) return PRICES.opus;
-  if (id.includes('haiku')) return PRICES.haiku;
-  return PRICES.sonnet; // sensible mid-tier default (sonnet 5/4.x and unknown ids)
+  if (id.includes('fable') || id.includes('mythos')) return 'fable';
+  if (id.includes('opus')) return 'opus';
+  if (id.includes('haiku')) return 'haiku';
+  return 'sonnet'; // sensible mid-tier default (sonnet 5/4.x and unknown ids)
 }
+function priceFor(model) { return PRICES[tierOf(model)]; }
 function entryCost(model, u) {
   const p = priceFor(model);
   return (
@@ -222,11 +223,12 @@ function parseFile(fp) {
     tok.cr += u.cache_read_input_tokens || 0;
     tok.cw += u.cache_creation_input_tokens || 0;
     if (ts < minTs) continue; // counted toward token totals, but too old for any window
-    msgs.push({ k, t: ts, c: entryCost(o.message && o.message.model, u) }); // t = exact ms timestamp
+    const model = o.message && o.message.model;
+    msgs.push({ k, t: ts, c: entryCost(model, u), md: tierOf(model) }); // t = exact ms timestamp, md = model tier
   }
   return { msgs, tok };
 }
-const CACHE_VERSION = 3; // bump when the cached per-message record shape changes
+const CACHE_VERSION = 4; // bump when the cached per-message record shape changes (v4 adds md = model tier)
 function loadCache() {
   try { const o = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8')); if (o && o.files && o.version === CACHE_VERSION) return o; } catch (_) {}
   return { version: CACHE_VERSION, files: {} };
@@ -323,15 +325,19 @@ function computeWindows(data) {
 
   // Sum windows with GLOBAL dedup across all hosts (message ids are unique, so
   // this only matters if a transcript was copied between machines by hand).
+  // by5/by7: per-model-tier cost within each window (Anthropic sends no per-model
+  // rate limit, so we attribute spend ourselves from each transcript's model id).
   const seen = new Set();
   let five = 0, week = 0;
+  const by5 = {}, by7 = {};
   for (const m of allMsgs) {
     if (m.k) { if (seen.has(m.k)) continue; seen.add(m.k); }
-    if (m.t >= start7) week += m.c;
-    if (m.t >= start5) five += m.c;
+    const md = m.md || 'other'; // remote summaries from a pre-v4 host lack md
+    if (m.t >= start7) { week += m.c; by7[md] = (by7[md] || 0) + m.c; }
+    if (m.t >= start5) { five += m.c; by5[md] = (by5[md] || 0) + m.c; }
   }
 
-  return { five, week, sessionTok };
+  return { five, week, sessionTok, by5, by7 };
 }
 
 // ---------------------------------------------------------------------------
@@ -397,6 +403,22 @@ function costGroup(win, sessionCost) {
   if (!parts.length) return null;
   return `${C.label('OR≈')} ` + parts.join(C.dim(' · '));
 }
+// Per-model spend within a window, each tier as a share-bar + $ (fable gets its own
+// bar here — Claude Code sends no per-model rate limit, so this is spend-attributed
+// from transcripts, not a rate-limit reading). Trims trailing tiers to fit COLUMNS.
+const TIER_ORDER = { fable: 0, opus: 1, sonnet: 2, haiku: 3, other: 4 };
+function modelLine(by, total, label) {
+  if (!by || !(total > 0)) return null;
+  const tiers = Object.keys(by).filter((t) => by[t] > 0)
+    .sort((a, b) => by[b] - by[a] || (TIER_ORDER[a] ?? 9) - (TIER_ORDER[b] ?? 9));
+  if (!tiers.length) return null;
+  const cols = Number(process.env.COLUMNS) || 120;
+  const head = `${C.label(label)} `;
+  // share-bars are proportion, not risk → keep them neutral (never warn/bad).
+  const parts = tiers.map((t) => `${C.model(t)} ${bar((by[t] / total) * 100, 6, 101, 101)} ${C.cost(money(by[t]))}`);
+  while (parts.length > 1 && stripAnsi(head + parts.join(SEP)).length > cols) parts.pop();
+  return head + parts.join(SEP);
+}
 
 // Join segments to fit COLUMNS, dropping lowest-priority (last) optional ones first.
 function fitLine(required, optional) {
@@ -442,6 +464,13 @@ function render(data) {
     else { lines.push(bars); lines.push(costs); }
   } else {
     lines.push(bars || costs || C.dim('no usage data'));
+  }
+
+  // ---- line 3: per-model spend breakdown (SL_MODELS=0 disables; =5h uses the 5h window, default 7d) ----
+  if (process.env.SL_MODELS !== '0') {
+    const use5 = process.env.SL_MODELS === '5h';
+    const ml = modelLine(use5 ? win.by5 : win.by7, use5 ? win.five : win.week, use5 ? '5h·by' : '7d·by');
+    if (ml) lines.push(ml);
   }
   return lines.join('\n');
 }
