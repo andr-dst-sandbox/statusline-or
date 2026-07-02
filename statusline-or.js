@@ -65,6 +65,24 @@ function resolveShareDir() {
 const SHARE_DIR = resolveShareDir();
 const HOSTNAME = String(os.hostname() || 'host').replace(/[^A-Za-z0-9._-]/g, '_');
 
+// Manual pin for the Fable weekly usage bar. Claude Code's status-line payload
+// carries NO per-model rate limit (only account-wide 5h/7d), so the real Fable
+// weekly % lives only in `/usage`. Type it here to show it on the bar; it stays
+// until you update it (re-read every refresh). Env wins over the local file.
+//   - env SL_FABLE_PCT=65, or
+//   - ~/.claude/statusline-or.local.json  =>  { "fablePct": 65 }
+// Unset => the Fable bar falls back to live spend-share.
+function resolveFablePct() {
+  const e = process.env.SL_FABLE_PCT;
+  if (e != null && e !== '') { const n = Number(e); if (isFinite(n)) return n; }
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(HOME, '.claude', 'statusline-or.local.json'), 'utf8'));
+    if (cfg && cfg.fablePct != null) { const n = Number(cfg.fablePct); if (isFinite(n)) return n; }
+  } catch (_) {}
+  return null;
+}
+const FABLE_PCT = resolveFablePct();
+
 // ---------------------------------------------------------------------------
 // Pricing — USD per 1,000,000 tokens. Matches Anthropic list prices, which
 // OpenRouter mirrors for Claude models. Edit here if rates change.
@@ -403,14 +421,19 @@ function costGroup(win, sessionCost) {
   if (!parts.length) return null;
   return `${C.label('OR≈')} ` + parts.join(C.dim(' · '));
 }
-// Fable-only spend within a window, as a usage bar (fable's share of the window
-// $) + the $ itself. Claude Code sends no per-model rate limit, so this is spend
-// attributed from transcripts, not a rate-limit reading. The bar is a proportion,
-// not a risk gauge → kept neutral (never warn/bad). Hidden when fable is unused.
-function fableSegment(by, total, label) {
+// Fable-only usage on line 3, with the live $ spent in the window alongside.
+// If pinPct is set (the manual weekly-limit pin from /usage), the bar is a real
+// usage meter: heat-colored (green/amber/red) and a ↻ marker to flag it's pinned.
+// Otherwise the bar is fable's share of the window $ — a proportion, kept neutral
+// (never warn/bad). Hidden when fable is unused and nothing is pinned.
+function fableSegment(by, total, label, pinPct) {
   if (!by || !(total > 0)) return null;
   const c = by.fable || 0;
-  if (c <= 0) return null;
+  if (c <= 0 && pinPct == null) return null;
+  if (pinPct != null) {
+    const p = Math.max(0, Math.min(100, pinPct));
+    return `${C.label(label)} ${bar(p, 10, 50, 80)} ${heat(p, 50, 80)(Math.round(p) + '%')} ${C.dim('◈')} ${C.cost(money(c))}`;
+  }
   const pct = (c / total) * 100;
   return `${C.label(label)} ${bar(pct, 10, 101, 101)} ${C.model(Math.round(pct) + '%')} ${C.cost(money(c))}`;
 }
@@ -461,10 +484,16 @@ function render(data) {
     lines.push(bars || costs || C.dim('no usage data'));
   }
 
-  // ---- line 3: fable-only spend bar (SL_FABLE=0 disables; =5h uses the 5h window, default 7d) ----
+  // ---- line 3: fable-only bar (SL_FABLE=0 disables; =5h uses the 5h window, default 7d) ----
+  // The manual pin (FABLE_PCT) is a weekly figure, so it applies only to the 7d view.
   if (process.env.SL_FABLE !== '0') {
     const use5 = process.env.SL_FABLE === '5h';
-    const fb = fableSegment(use5 ? win.by5 : win.by7, use5 ? win.five : win.week, use5 ? '5h fable' : '7d fable');
+    const fb = fableSegment(
+      use5 ? win.by5 : win.by7,
+      use5 ? win.five : win.week,
+      use5 ? '5h fable' : '7d fable',
+      use5 ? null : FABLE_PCT
+    );
     if (fb) lines.push(fb);
   }
   return lines.join('\n');
